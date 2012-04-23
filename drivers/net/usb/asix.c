@@ -131,9 +131,13 @@ static int ax8817x_set_mac_addr(struct net_device *net, void *p)
 
 static void ax88178_status(struct usbnet *dev, struct urb *urb)
 {
-	struct ax88172_int_data *event;
-	struct ax88178_data *ax178dataptr = (struct ax88178_data *)dev->priv;
-	int link;
+	int padlen;
+	int headroom = skb_headroom(skb);
+	int tailroom = skb_tailroom(skb);
+	u32 packet_len;
+	u32 padbytes = 0xffff0000;
+
+	padlen = ((skb->len + 4) & (dev->maxpacket - 1)) ? 0 : 4;
 
 	if (urb->actual_length < 8)
 		return;
@@ -141,15 +145,10 @@ static void ax88178_status(struct usbnet *dev, struct urb *urb)
 	if (ax178dataptr->EepromData == PHY_MODE_MAC_TO_MAC_GMII)
 		return;
 
-	event = urb->transfer_buffer;
-	link = event->link & 0x01;
-	if (netif_carrier_ok(dev->net) != link) {
-		if (link) {
-			netif_carrier_on(dev->net);
-			axusbnet_defer_kevent(dev, EVENT_LINK_RESET);
-		} else
-			netif_carrier_off(dev->net);
-		devwarn(dev, "ax88178 - Link status is: %d", link);
+	if (padlen) {
+		cpu_to_le32s(&padbytes);
+		memcpy(skb_tail_pointer(skb), &padbytes, sizeof(padbytes));
+		skb_put(skb, sizeof(padbytes));
 	}
 }
 
